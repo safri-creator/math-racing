@@ -5,8 +5,30 @@ export default function App(){const [mode,setMode]=useState('home'),[email,setEm
 const msg=m=>{setNotice(m);setTimeout(()=>setNotice(''),4000)};
 useEffect(()=>{if(!supabase)return;supabase.auth.getSession().then(({data})=>setTeacher(data.session?.user||null));const raw=sessionStorage.getItem('math-racing-session');if(raw){try{const saved=JSON.parse(raw);(async()=>{const{data,error}=await supabase.rpc('get_my_race_player',{p_player_id:saved.playerId,p_session_token:saved.token});if(error||!data){sessionStorage.removeItem('math-racing-session');return;}const{data:q}=await supabase.rpc('get_race_questions',{p_event_id:saved.event.id});setEvent(saved.event);setPlayer(data);setPlayerSessionToken(saved.token);setQuestions(q||[]);setQIndex(data.current_question_index||0);setRaceArmed(false);if(data.disqualified||data.status==='disqualified')setMode('crash');else if(data.status==='playing')setMode('play');else setMode('result');})();}catch{sessionStorage.removeItem('math-racing-session')}}},[]);
 useEffect(()=>{const on=()=>setNetworkOnline(true),off=()=>setNetworkOnline(false);window.addEventListener('online',on);window.addEventListener('offline',off);return()=>{window.removeEventListener('online',on);window.removeEventListener('offline',off)}},[]);
-const loadEvents=async()=>{if(!supabase)return;let{data}=await supabase.from('racing_events').select('*').order('created_at',{ascending:false});setEvents(data||[])};
-useEffect(()=>{if(mode==='teacher')loadEvents()},[mode]);
+
+const loadEvents = async () => {
+  if (!supabase || !teacher?.id) return;
+
+  const { data, error } = await supabase
+    .from('racing_events')
+    .select('*')
+    .eq('teacher_id', teacher.id)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    setEvents([]);
+    msg('Gagal memuat event: ' + error.message);
+    return;
+  }
+
+  setEvents(data || []);
+};
+
+useEffect(() => {
+  if (mode === 'teacher' && teacher?.id) {
+    loadEvents();
+  }
+}, [mode, teacher?.id]);
 const selectEvent=async e=>{setEvent(e);await loadLive(e.id);setMode('live');};
 const loadLive=async id=>{if(!supabase)return;let{data}=await supabase.from('race_players').select('*').eq('event_id',id).order('progress',{ascending:false});setPlayers(data||[]);let{data:v}=await supabase.from('race_violations').select('*').eq('event_id',id).order('occurred_at',{ascending:false});setViolations(v||[]);let{data:q}=await supabase.rpc('get_race_questions',{p_event_id:id});setQuestions(q||[]);};
 useEffect(()=>{if(mode!=='live'||!event||!supabase)return;loadLive(event.id);const ch=supabase.channel('race-'+event.id).on('postgres_changes',{event:'*',schema:'public',table:'race_players',filter:`event_id=eq.${event.id}`},()=>loadLive(event.id)).subscribe();const timer=setInterval(()=>loadLive(event.id),3000);return()=>{supabase.removeChannel(ch);clearInterval(timer)}},[mode,event?.id]);
