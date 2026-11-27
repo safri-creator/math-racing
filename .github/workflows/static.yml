@@ -3,7 +3,9 @@ name: Deploy MATH RACING to GitHub Pages
 
 on:
   push:
-    branches: ["utama"]
+    branches:
+      - main
+      - utama
   workflow_dispatch:
 
 permissions:
@@ -21,6 +23,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
