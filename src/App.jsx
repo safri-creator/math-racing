@@ -30,7 +30,7 @@ useEffect(() => {
   }
 }, [mode, teacher?.id]);
 const selectEvent=async e=>{setEvent(e);await loadLive(e.id);setMode('live');};
-const loadLive=async id=>{if(!supabase)return;let{data}=await supabase.from('race_players').select('*').eq('event_id',id).order('progress',{ascending:false});setPlayers(data||[]);let{data:v}=await supabase.from('race_violations').select('*').eq('event_id',id).order('occurred_at',{ascending:false});setViolations(v||[]);let{data:q}=await supabase.rpc('get_race_questions',{p_event_id:id});setQuestions(q||[]);};
+const loadLive=async id=>{if(!supabase)return;let{data}=await supabase.from('race_players').select('*').eq('event_id',id).order('progress',{ascending:false});setPlayers(data||[]);let{data:v}=await supabase.from('race_violations').select('*').eq('event_id',id).order('occurred_at',{ascending:false});setViolations(v||[]);let{data:q,error:questionError}=await supabase.rpc('get_race_questions_teacher',{p_event_id:id});if(questionError){msg('Gagal memuat kunci soal guru: '+questionError.message);setQuestions([]);}else setQuestions(q||[]);};
 useEffect(()=>{if(mode!=='live'||!event||!supabase)return;loadLive(event.id);const ch=supabase.channel('race-'+event.id).on('postgres_changes',{event:'*',schema:'public',table:'race_players',filter:`event_id=eq.${event.id}`},()=>loadLive(event.id)).subscribe();const timer=setInterval(()=>loadLive(event.id),3000);return()=>{supabase.removeChannel(ch);clearInterval(timer)}},[mode,event?.id]);
 
 const signIn = async () => {
