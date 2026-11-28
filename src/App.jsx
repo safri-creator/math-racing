@@ -65,7 +65,7 @@ const signIn = async () => {
 
   setMode('teacher');
 };
-setBusy(true);let{data,error}=await supabase.auth.signInWithPassword({email,password:pass});setBusy(false);if(error)return msg(error.message);setTeacher(data.user);setMode('teacher');};
+
 const signOut=async()=>{await supabase.auth.signOut();setTeacher(null);setMode('home')};
 const createEvent=async()=>{if(!teacher)return msg('Silakan login guru.');let code=eventForm.code.trim().toUpperCase()||Math.random().toString(36).slice(2,8).toUpperCase();let{data,error}=await supabase.from('racing_events').insert({title:eventForm.title,code,class_name:eventForm.class_name,teacher_id:teacher.id,status:'waiting',question_time_limit_seconds:Number(eventForm.question_time_limit_seconds)||60,anti_cheat_enabled:true,strict_mode:true,require_fullscreen:true,log_focus_changes:true}).select().single();if(error)return msg(error.message);data.code=code; // code generated separately below if required
 if(!eventForm.code){let{data:updated,error:err}=await supabase.from('racing_events').update({code}).eq('id',data.id).select().single();if(err)return msg(err.message);data=updated;}
