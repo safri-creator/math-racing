@@ -1,14 +1,39 @@
-import React, { useMemo, useRef } from "react";
+import React, { Suspense, useMemo, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { PerspectiveCamera, Stars } from "@react-three/drei";
+import { PerspectiveCamera, Stars, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
+import bikeUrl from "./assets/sport-motorcycle-v1-lod0.glb";
 
 // MATH RACING — third-person 3D prototype.
 // Bike front points toward -Z; camera follows from behind at +Z.
 function Bike({ position = [0, 0, 0], color = "#e11d48", player = false, lane = 0, speed = 1 }) {
   const root = useRef();
-  const wheels = useRef([]);
   const rider = useRef();
+  const { scene } = useGLTF(bikeUrl);
+
+  // Clone the GLB so every racer has its own independent model/material state.
+  const bikeModel = useMemo(() => {
+    const clone = scene.clone(true);
+    clone.traverse((obj) => {
+      if (obj.isMesh) {
+        obj.castShadow = true;
+        obj.receiveShadow = true;
+      }
+    });
+
+    const bounds = new THREE.Box3().setFromObject(clone);
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    bounds.getSize(size);
+    bounds.getCenter(center);
+
+    // Normalize different model dimensions to a consistent racing-bike length.
+    const longest = Math.max(size.x, size.z, 0.001);
+    const scale = 2.65 / longest;
+    const rotateY = size.x > size.z ? Math.PI / 2 : Math.PI;
+
+    return { object: clone, center, scale, rotateY, minY: bounds.min.y };
+  }, [scene]);
 
   useFrame((state, delta) => {
     if (!root.current) return;
@@ -20,131 +45,55 @@ function Bike({ position = [0, 0, 0], color = "#e11d48", player = false, lane = 
       3.5,
       delta
     );
-    if (rider.current) rider.current.rotation.z = THREE.MathUtils.damp(
-      rider.current.rotation.z,
-      Math.sin(t * 0.72 + lane) * 0.025,
-      3,
-      delta
-    );
-    wheels.current.forEach((wheel) => {
-      if (wheel) wheel.rotation.x -= delta * 13 * speed;
-    });
+    if (rider.current) {
+      rider.current.rotation.z = THREE.MathUtils.damp(
+        rider.current.rotation.z,
+        Math.sin(t * 0.72 + lane) * 0.025,
+        3,
+        delta
+      );
+    }
   });
 
-  const riderSuit = player ? "#f1f5f9" : "#e2e8f0";
+  const riderSuit = player ? "#f1f5f9" : color;
+
   return (
-    // The bike's nose is +Z in the model; rotate it to face down the track (-Z).
-    <group ref={root} position={position} rotation={[0, Math.PI, 0]} scale={player ? 1.12 : 0.84}>
-      {/* Rear and front racing slicks */}
-      {[0.96, -0.96].map((z, i) => (
-        <group key={z}>
-          <mesh ref={(el) => (wheels.current[i] = el)} position={[0, 0.43, z]} rotation={[Math.PI / 2, 0, 0]}>
-            <torusGeometry args={[0.385, 0.115, 16, 32]} />
-            <meshStandardMaterial color="#090d13" roughness={0.92} />
-          </mesh>
-          <mesh position={[0, 0.43, z]} rotation={[Math.PI / 2, 0, 0]}>
-            <cylinderGeometry args={[0.225, 0.225, 0.13, 28]} />
-            <meshStandardMaterial color="#aeb8c7" metalness={0.78} roughness={0.28} />
-          </mesh>
-          <mesh position={[0, 0.43, z]} rotation={[Math.PI / 2, 0, 0]}>
-            <cylinderGeometry args={[0.07, 0.07, 0.145, 20]} />
-            <meshStandardMaterial color="#475569" metalness={0.8} />
-          </mesh>
-        </group>
-      ))}
+    <group ref={root} position={position} scale={player ? 1.08 : 0.82}>
+      <group
+        rotation={[0, bikeModel.rotateY, 0]}
+        scale={bikeModel.scale}
+        position={[
+          -bikeModel.center.x * bikeModel.scale,
+          -bikeModel.minY * bikeModel.scale,
+          -bikeModel.center.z * bikeModel.scale
+        ]}
+      >
+        <primitive object={bikeModel.object} />
+      </group>
 
-      {/* Swingarm, frame and engine */}
-      <mesh position={[0, 0.67, -0.08]} rotation={[0, 0, Math.PI / 2]}>
-        <cylinderGeometry args={[0.065, 0.09, 1.25, 12]} />
-        <meshStandardMaterial color="#64748b" metalness={0.85} roughness={0.3} />
-      </mesh>
-      <mesh position={[0, 0.76, 0.02]} scale={[0.52, 0.39, 0.58]}>
-        <boxGeometry args={[1, 1, 1]} />
-        <meshStandardMaterial color="#252d38" metalness={0.72} roughness={0.34} />
-      </mesh>
-      <mesh position={[0.31, 0.69, -0.25]} rotation={[0.08, 0, -0.12]}>
-        <cylinderGeometry args={[0.075, 0.11, 0.78, 12]} />
-        <meshStandardMaterial color="#a7b0bc" metalness={0.9} roughness={0.22} />
-      </mesh>
-
-      {/* MotoGP-style aerodynamic fairings */}
-      <mesh position={[0, 1.02, -0.05]} scale={[0.67, 0.47, 1.12]}>
-        <sphereGeometry args={[0.72, 28, 20]} />
-        <meshStandardMaterial color={color} metalness={0.38} roughness={0.27} />
-      </mesh>
-      <mesh position={[0, 1.08, 0.73]} rotation={[0.08, 0, 0]} scale={[0.47, 0.35, 0.48]}>
-        <coneGeometry args={[0.82, 1.0, 6]} />
-        <meshStandardMaterial color={color} metalness={0.35} roughness={0.25} />
-      </mesh>
-      {/* Windscreen, headlight and rear tail */}
-      <mesh position={[0, 1.39, 0.83]} rotation={[-0.28, 0, 0]} scale={[0.3, 0.12, 0.34]}>
-        <sphereGeometry args={[1, 20, 14]} />
-        <meshPhysicalMaterial color="#b9e7ff" transparent opacity={0.72} roughness={0.12} metalness={0.12} />
-      </mesh>
-      <mesh position={[0, 1.32, 1.03]} scale={[0.22, 0.07, 0.08]}>
-        <sphereGeometry args={[1, 16, 12]} />
-        <meshStandardMaterial color="#f8fafc" emissive="#dbeafe" emissiveIntensity={0.9} />
-      </mesh>
-      <mesh position={[0, 1.25, -0.91]} rotation={[0.05, 0, 0]} scale={[0.36, 0.16, 0.46]}>
-        <coneGeometry args={[0.75, 0.85, 5]} />
-        <meshStandardMaterial color={color} metalness={0.28} roughness={0.3} />
-      </mesh>
-      <mesh position={[0, 1.29, -1.22]} scale={[0.16, 0.055, 0.08]}>
-        <sphereGeometry args={[1, 16, 10]} />
-        <meshStandardMaterial color="#ef4444" emissive="#ef4444" emissiveIntensity={0.7} />
-      </mesh>
-
-      {/* Forks and handlebars */}
-      {[-1, 1].map((side) => (
-        <mesh key={side} position={[side * 0.2, 0.91, 0.73]} rotation={[0.1, 0, side * -0.12]}>
-          <cylinderGeometry args={[0.035, 0.045, 0.83, 10]} />
-          <meshStandardMaterial color="#cbd5e1" metalness={0.85} />
-        </mesh>
-      ))}
-      <mesh position={[0, 1.38, 0.55]} rotation={[0, 0, Math.PI / 2]}>
-        <cylinderGeometry args={[0.045, 0.045, 0.9, 12]} />
-        <meshStandardMaterial color="#171c25" metalness={0.6} />
-      </mesh>
-
-      {/* Rider in tucked racing posture: suit, full-face helmet, gloves, boots */}
-      <group ref={rider} position={[0, 1.36, -0.1]} rotation={[0.3, 0, 0]}>
-        <mesh position={[0, 0.28, 0.02]} rotation={[0.42, 0, 0]} scale={[0.42, 0.58, 0.34]}>
-          <capsuleGeometry args={[0.38, 0.55, 6, 12]} />
+      {/* Separate rider silhouette: the uploaded GLB contains the motorcycle only. */}
+      <group ref={rider} position={[0, 0.88, 0.02]} rotation={[0.32, 0, 0]}>
+        <mesh position={[0, 0.22, 0]}>
+          <capsuleGeometry args={[0.23, 0.48, 6, 12]} />
           <meshStandardMaterial color={riderSuit} roughness={0.72} />
         </mesh>
-        {/* back hump */}
-        <mesh position={[0, 0.55, -0.19]} scale={[0.28, 0.28, 0.32]}>
-          <sphereGeometry args={[1, 18, 14]} />
-          <meshStandardMaterial color="#334155" roughness={0.8} />
-        </mesh>
-        {/* helmet shell and dark visor */}
-        <mesh position={[0, 0.88, 0.15]}>
-          <sphereGeometry args={[0.3, 24, 18]} />
+        <mesh position={[0, 0.72, 0.08]}>
+          <sphereGeometry args={[0.22, 24, 18]} />
           <meshStandardMaterial color={player ? "#dc2626" : color} metalness={0.35} roughness={0.24} />
         </mesh>
-        <mesh position={[0, 0.88, 0.405]} scale={[0.225, 0.115, 0.055]}>
+        <mesh position={[0, 0.72, 0.27]} scale={[0.17, 0.085, 0.045]}>
           <sphereGeometry args={[1, 20, 14]} />
           <meshPhysicalMaterial color="#07111f" metalness={0.65} roughness={0.12} />
         </mesh>
-        {/* arms reach handlebars */}
         {[-1, 1].map((side) => (
           <group key={side}>
-            <mesh position={[side * 0.38, 0.34, 0.36]} rotation={[0.92, 0, side * -0.48]}>
-              <capsuleGeometry args={[0.105, 0.55, 5, 10]} />
+            <mesh position={[side * 0.28, 0.12, 0.25]} rotation={[0.9, 0, side * -0.45]}>
+              <capsuleGeometry args={[0.075, 0.42, 5, 10]} />
               <meshStandardMaterial color={riderSuit} />
             </mesh>
-            <mesh position={[side * 0.47, 0.17, 0.58]} scale={[0.12, 0.1, 0.13]}>
-              <sphereGeometry args={[1, 12, 10]} />
-              <meshStandardMaterial color="#111827" />
-            </mesh>
-            {/* tucked legs and racing boots */}
-            <mesh position={[side * 0.22, -0.2, -0.3]} rotation={[-0.78, 0, side * 0.14]}>
-              <capsuleGeometry args={[0.13, 0.5, 5, 10]} />
+            <mesh position={[side * 0.18, -0.22, -0.28]} rotation={[-0.75, 0, side * 0.12]}>
+              <capsuleGeometry args={[0.09, 0.38, 5, 10]} />
               <meshStandardMaterial color="#202938" />
-            </mesh>
-            <mesh position={[side * 0.24, -0.43, -0.61]} scale={[0.14, 0.13, 0.23]}>
-              <boxGeometry args={[1, 1, 1]} />
-              <meshStandardMaterial color="#090d13" roughness={0.65} />
             </mesh>
           </group>
         ))}
@@ -152,6 +101,8 @@ function Bike({ position = [0, 0, 0], color = "#e11d48", player = false, lane = 
     </group>
   );
 }
+
+useGLTF.preload(bikeUrl);
 
 function RoadMarkings() {
   const group = useRef();
@@ -239,7 +190,7 @@ function ArenaScene({ boost = false }) {
 export default function Race3D({ boost = false, height = "100%", className = "" }) {
   return <div className={className} style={{ width: "100%", height, minHeight: 320, overflow: "hidden", borderRadius: 18, background: "#071426", position: "relative" }}>
     <Canvas dpr={[1, 1.5]} gl={{ antialias: true, powerPreference: "high-performance" }} shadows camera={{ position: [0, 4.25, 9.5], fov: 60 }}>
-      <ArenaScene boost={boost} />
+      <Suspense fallback={null}><ArenaScene boost={boost} /></Suspense>
     </Canvas>
     <div style={{ position: "absolute", left: 14, top: 12, padding: "7px 12px", borderRadius: 10, color: "white", background: "rgba(3,10,24,.72)", border: "1px solid rgba(96,165,250,.45)", font: "800 12px Orbitron, sans-serif", letterSpacing: 1, pointerEvents: "none" }}>
       MATH RACING · 3D ARENA
